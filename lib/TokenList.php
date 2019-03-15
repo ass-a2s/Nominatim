@@ -71,7 +71,7 @@ class TokenList
     /**
      * Add token information from the word table in the database.
      *
-     * @param object   $oDB           Database connection.
+     * @param object   $oDB           Nominatim::DB instance.
      * @param string[] $aTokens       List of tokens to look up in the database.
      * @param string[] $aCountryCodes List of country restrictions.
      * @param string   $sNormQuery    Normalized query string.
@@ -85,11 +85,11 @@ class TokenList
         $sSQL = 'SELECT word_id, word_token, word, class, type, country_code,';
         $sSQL .= ' operator, coalesce(search_name_count, 0) as count';
         $sSQL .= ' FROM word WHERE word_token in (';
-        $sSQL .= join(',', array_map('getDBQuoted', $aTokens)).')';
+        $sSQL .= join(',', $oDB->getDBQuotedList($aTokens)).')';
 
         Debug::printSQL($sSQL);
 
-        $aDBWords = chksql($oDB->getAll($sSQL), 'Could not get word tokens.');
+        $aDBWords = $oDB->getAll($sSQL, null, 'Could not get word tokens.');
 
         foreach ($aDBWords as $aWord) {
             $oToken = null;

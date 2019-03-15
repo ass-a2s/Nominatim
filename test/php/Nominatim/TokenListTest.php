@@ -2,8 +2,6 @@
 
 namespace Nominatim;
 
-// require_once(CONST_BasePath.'/lib/db.php');
-// require_once(CONST_BasePath.'/lib/cmd.php');
 require_once(CONST_BasePath.'/lib/TokenList.php');
 
 
@@ -56,9 +54,18 @@ class TokenTest extends \PHPUnit\Framework\TestCase
     {
         $this->expectOutputRegex('/<p><tt>/');
 
-        $oDbStub = $this->getMockBuilder(\DB::class)
-                        ->setMethods(array('getAll'))
+        $oDbStub = $this->getMockBuilder(Nominatim\DB::class)
+                        ->setMethods(array('getAll', 'getDBQuotedList'))
                         ->getMock();
+
+        $oDbStub->method('getDBQuotedList')
+                ->will($this->returnCallback(function ($aVals) {
+                    return array_map(function ($sVal) {
+                        return "'".$sVal."'";
+                    }, $aVals);
+                }));
+
+
         $oDbStub->method('getAll')
                 ->will($this->returnCallback(function ($sql) {
                     $aResults = array();

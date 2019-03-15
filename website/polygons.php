@@ -12,9 +12,10 @@ $iDays = $oParams->getInt('days', false);
 $bReduced = $oParams->getBool('reduced', false);
 $sClass = $oParams->getString('class', false);
 
-$oDB =& getDB();
+$oDB = new Nominatim\DB();
+$oDB->connect();
 
-$iTotalBroken = (int) chksql($oDB->getOne('select count(*) from import_polygon_error'));
+$iTotalBroken = (int) $oDB->getOne('select count(*) from import_polygon_error');
 
 $aPolygons = array();
 while ($iTotalBroken && empty($aPolygons)) {
@@ -36,7 +37,7 @@ while ($iTotalBroken && empty($aPolygons)) {
     }
 
     $sSQL .= ' order by updated desc limit 1000';
-    $aPolygons = chksql($oDB->getAll($sSQL));
+    $aPolygons = $oDB->getAll($sSQL);
 }
 
 if (CONST_Debug) {

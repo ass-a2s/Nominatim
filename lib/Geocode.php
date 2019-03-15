@@ -527,8 +527,8 @@ class Geocode
         $sNormQuery = $this->normTerm($this->sQuery);
         Debug::printVar('Normalized query', $sNormQuery);
 
-        $sLanguagePrefArraySQL = getArraySQL(
-            array_map('getDBQuoted', $this->aLangPrefOrder)
+        $sLanguagePrefArraySQL = $this->oDB->getArraySQL(
+            $this->oDB->getDBQuotedList($this->aLangPrefOrder)
         );
 
         $sQuery = $this->sQuery;
@@ -581,8 +581,9 @@ class Geocode
 
             if ($sSpecialTerm && !$aSearches[0]->hasOperator()) {
                 $sSpecialTerm = pg_escape_string($sSpecialTerm);
-                $sToken = chksql(
-                    $this->oDB->getOne("SELECT make_standard_name('$sSpecialTerm')"),
+                $sToken = $this->oDB->getOne(
+                    'SELECT make_standard_name(:term)',
+                    array(':term' => $sSpecialTerm),
                     'Cannot decode query. Wrong encoding?'
                 );
                 $sSQL = 'SELECT class, type FROM word ';
@@ -590,7 +591,7 @@ class Geocode
                 $sSQL .= '   AND class is not null AND class not in (\'place\')';
 
                 Debug::printSQL($sSQL);
-                $aSearchWords = chksql($this->oDB->getAll($sSQL));
+                $aSearchWords = $this->oDB->getAll($sSQL);
                 $aNewSearches = array();
                 foreach ($aSearches as $oSearch) {
                     foreach ($aSearchWords as $aSearchTerm) {
@@ -628,8 +629,9 @@ class Geocode
             $aTokens = array();
             $aPhrases = array();
             foreach ($aInPhrases as $iPhrase => $sPhrase) {
-                $sPhrase = chksql(
-                    $this->oDB->getOne('SELECT make_standard_name('.getDBQuoted($sPhrase).')'),
+                $sPhrase = $this->oDB->getOne(
+                    'SELECT make_standard_name(:phrase)',
+                    array(':phrase' => $sPhrase),
                     'Cannot normalize query string (is it a UTF-8 string?)'
                 );
                 if (trim($sPhrase)) {
@@ -647,7 +649,7 @@ class Geocode
             if (!empty($aTokens)) {
                 $sSQL = 'SELECT word_id, word_token, word, class, type, country_code, operator, search_name_count';
                 $sSQL .= ' FROM word ';
-                $sSQL .= ' WHERE word_token in ('.join(',', array_map('getDBQuoted', $aTokens)).')';
+                $sSQL .= ' WHERE word_token in ('.join(',', $this->oDB->getDBQuotedList($aTokens)).')';
 
                 Debug::printSQL($sSQL);
 
@@ -830,7 +832,7 @@ class Geocode
                     if ($aFilterSql) {
                         $sSQL = join(' UNION ', $aFilterSql);
                         Debug::printSQL($sSQL);
-                        $aFilteredIDs = chksql($this->oDB->getCol($sSQL));
+                        $aFilteredIDs = $this->oDB->getCol($sSQL);
                     }
 
                     $tempIDs = array();

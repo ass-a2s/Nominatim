@@ -237,7 +237,8 @@ class SearchDescription
                 $oSearch->sHouseNumber = $oSearchTerm->sToken;
                 // sanity check: if the housenumber is not mainly made
                 // up of numbers, add a penalty
-                if (preg_match_all('/[^0-9]/', $oSearch->sHouseNumber, $aMatches) > 2) {
+                if (preg_match('/\\d/', $oSearch->sHouseNumber) === 0
+                    || preg_match_all('/[^0-9]/', $oSearch->sHouseNumber, $aMatches) > 2) {
                     $oSearch->iSearchRank++;
                 }
                 if (empty($oSearchTerm->iId)) {
@@ -403,7 +404,7 @@ class SearchDescription
     /**
      * Query database for places that match this search.
      *
-     * @param object  $oDB      Database connection to use.
+     * @param object  $oDB      Nominatim::DB instance to use.
      * @param integer $iMinRank Minimum address rank to restrict search to.
      * @param integer $iMaxRank Maximum address rank to restrict search to.
      * @param integer $iLimit   Maximum number of results.
@@ -478,7 +479,7 @@ class SearchDescription
                 $sSQL .= ' WHERE place_id in ('.$sPlaceIds.')';
                 $sSQL .= " AND postcode != '".$this->sPostcode."'";
                 Debug::printSQL($sSQL);
-                $aFilteredPlaceIDs = chksql($oDB->getCol($sSQL));
+                $aFilteredPlaceIDs = $oDB->getCol($sSQL);
                 if ($aFilteredPlaceIDs) {
                     foreach ($aFilteredPlaceIDs as $iPlaceId) {
                         $aResults[$iPlaceId]->iResultRank++;
@@ -503,8 +504,10 @@ class SearchDescription
 
         Debug::printSQL($sSQL);
 
+        $iPlaceId = $oDB->getOne($sSQL);
+
         $aResults = array();
-        foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+        if ($iPlaceId) {
             $aResults[$iPlaceId] = new Result($iPlaceId);
         }
 
@@ -520,8 +523,7 @@ class SearchDescription
         $aDBResults = array();
         $sPoiTable = $this->poiTable();
 
-        $sSQL = 'SELECT count(*) FROM pg_tables WHERE tablename = \''.$sPoiTable."'";
-        if (chksql($oDB->getOne($sSQL))) {
+        if ($oDB->tableExists($sPoiTable)) {
             $sSQL = 'SELECT place_id FROM '.$sPoiTable.' ct';
             if ($this->oContext->sqlCountryList) {
                 $sSQL .= ' JOIN placex USING (place_id)';
@@ -541,14 +543,14 @@ class SearchDescription
             } elseif ($this->oContext->hasNearPoint()) {
                 $sSQL .= ' ORDER BY '.$this->oContext->distanceSQL('ct.centroid').' ASC';
             }
-            $sSQL .= " limit $iLimit";
+            $sSQL .= " LIMIT $iLimit";
             Debug::printSQL($sSQL);
-            $aDBResults = chksql($oDB->getCol($sSQL));
+            $aDBResults = $oDB->getCol($sSQL);
         }
 
         if ($this->oContext->hasNearPoint()) {
             $sSQL = 'SELECT place_id FROM placex WHERE ';
-            $sSQL .= 'class=\''.$this->sClass."' and type='".$this->sType."'";
+            $sSQL .= 'class = :class and type = :type';
             $sSQL .= ' AND '.$this->oContext->withinSQL('geometry');
             $sSQL .= ' AND linked_place_id is null';
             if ($this->oContext->sqlCountryList) {
@@ -557,7 +559,10 @@ class SearchDescription
             $sSQL .= ' ORDER BY '.$this->oContext->distanceSQL('centroid').' ASC';
             $sSQL .= " LIMIT $iLimit";
             Debug::printSQL($sSQL);
-            $aDBResults = chksql($oDB->getCol($sSQL));
+            $aDBResults = $oDB->getCol(
+                $sSQL,
+                array(':class' => $this->sClass, ':type' => $this->sType)
+            );
         }
 
         $aResults = array();
@@ -576,7 +581,7 @@ class SearchDescription
             $sSQL .= ', search_name s ';
             $sSQL .= 'WHERE s.place_id = p.parent_place_id ';
             $sSQL .= 'AND array_cat(s.nameaddress_vector, s.name_vector)';
-            $sSQL .= '      @> '.getArraySQL($this->aAddress).' AND ';
+            $sSQL .= '      @> '.$oDB->getArraySQL($this->aAddress).' AND ';
         } else {
             $sSQL .= 'WHERE ';
         }
@@ -589,7 +594,7 @@ class SearchDescription
         Debug::printSQL($sSQL);
 
         $aResults = array();
-        foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+        foreach ($oDB->getCol($sSQL) as $iPlaceId) {
             $aResults[$iPlaceId] = new Result($iPlaceId, Result::TABLE_POSTCODE);
         }
 
@@ -632,14 +637,14 @@ class SearchDescription
         }
 
         if (!empty($this->aName)) {
-            $aTerms[] = 'name_vector @> '.getArraySQL($this->aName);
+            $aTerms[] = 'name_vector @> '.$oDB->getArraySQL($this->aName);
         }
         if (!empty($this->aAddress)) {
             // For infrequent name terms disable index usage for address
             if ($this->bRareName) {
-                $aTerms[] = 'array_cat(nameaddress_vector,ARRAY[]::integer[]) @> '.getArraySQL($this->aAddress);
+                $aTerms[] = 'array_cat(nameaddress_vector,ARRAY[]::integer[]) @> '.$oDB->getArraySQL($this->aAddress);
             } else {
-                $aTerms[] = 'nameaddress_vector @> '.getArraySQL($this->aAddress);
+                $aTerms[] = 'nameaddress_vector @> '.$oDB->getArraySQL($this->aAddress);
             }
         }
 
@@ -694,7 +699,7 @@ class SearchDescription
         if (!empty($this->aFullNameAddress)) {
             $sExactMatchSQL = ' ( ';
             $sExactMatchSQL .= ' SELECT count(*) FROM ( ';
-            $sExactMatchSQL .= '  SELECT unnest('.getArraySQL($this->aFullNameAddress).')';
+            $sExactMatchSQL .= '  SELECT unnest('.$oDB->getArraySQL($this->aFullNameAddress).')';
             $sExactMatchSQL .= '    INTERSECT ';
             $sExactMatchSQL .= '  SELECT unnest(nameaddress_vector)';
             $sExactMatchSQL .= ' ) s';
@@ -719,10 +724,7 @@ class SearchDescription
 
             Debug::printSQL($sSQL);
 
-            $aDBResults = chksql(
-                $oDB->getAll($sSQL),
-                'Could not get places for search terms.'
-            );
+            $aDBResults = $oDB->getAll($sSQL, null, 'Could not get places for search terms.');
 
             foreach ($aDBResults as $aResult) {
                 $oResult = new Result($aResult['place_id']);
@@ -752,7 +754,7 @@ class SearchDescription
         Debug::printSQL($sSQL);
 
         // XXX should inherit the exactMatches from its parent
-        foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+        foreach ($oDB->getCol($sSQL) as $iPlaceId) {
             $aResults[$iPlaceId] = new Result($iPlaceId);
         }
 
@@ -778,7 +780,7 @@ class SearchDescription
 
             Debug::printSQL($sSQL);
 
-            foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+            foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                 $oResult = new Result($iPlaceId, Result::TABLE_OSMLINE);
                 $oResult->iHouseNumber = $iHousenumber;
                 $aResults[$iPlaceId] = $oResult;
@@ -794,7 +796,7 @@ class SearchDescription
 
             Debug::printSQL($sSQL);
 
-            foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+            foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                 $aResults[$iPlaceId] = new Result($iPlaceId, Result::TABLE_AUX);
             }
         }
@@ -815,7 +817,7 @@ class SearchDescription
 
             Debug::printSQL($sSQL);
 
-            foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+            foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                 $oResult = new Result($iPlaceId, Result::TABLE_TIGER);
                 $oResult->iHouseNumber = $iHousenumber;
                 $aResults[$iPlaceId] = $oResult;
@@ -849,7 +851,7 @@ class SearchDescription
 
             Debug::printSQL($sSQL);
 
-            foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+            foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                 $aResults[$iPlaceId] = new Result($iPlaceId);
             }
         }
@@ -857,12 +859,11 @@ class SearchDescription
         // NEAR and IN are handled the same
         if ($this->iOperator == Operator::TYPE || $this->iOperator == Operator::NEAR) {
             $sClassTable = $this->poiTable();
-            $sSQL = "SELECT count(*) FROM pg_tables WHERE tablename = '$sClassTable'";
-            $bCacheTable = (bool) chksql($oDB->getOne($sSQL));
+            $bCacheTable = $oDB->tableExists($sClassTable);
 
             $sSQL = "SELECT min(rank_search) FROM placex WHERE place_id in ($sPlaceIDs)";
             Debug::printSQL($sSQL);
-            $iMaxRank = (int)chksql($oDB->getOne($sSQL));
+            $iMaxRank = (int) $oDB->getOne($sSQL);
 
             // For state / country level searches the normal radius search doesn't work very well
             $sPlaceGeom = false;
@@ -875,7 +876,7 @@ class SearchDescription
                 $sSQL .= ' ORDER BY rank_search ASC ';
                 $sSQL .= ' LIMIT 1';
                 Debug::printSQL($sSQL);
-                $sPlaceGeom = chksql($oDB->getOne($sSQL));
+                $sPlaceGeom = $oDB->getOne($sSQL);
             }
 
             if ($sPlaceGeom) {
@@ -885,7 +886,7 @@ class SearchDescription
                 $sSQL = 'SELECT place_id FROM placex';
                 $sSQL .= " WHERE place_id in ($sPlaceIDs) and rank_search < $iMaxRank";
                 Debug::printSQL($sSQL);
-                $aPlaceIDs = chksql($oDB->getCol($sSQL));
+                $aPlaceIDs = $oDB->getCol($sSQL);
                 $sPlaceIDs = join(',', $aPlaceIDs);
             }
 
@@ -931,7 +932,7 @@ class SearchDescription
 
                     Debug::printSQL($sSQL);
 
-                    foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+                    foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                         $aResults[$iPlaceId] = new Result($iPlaceId);
                     }
                 } else {
@@ -963,7 +964,7 @@ class SearchDescription
 
                     Debug::printSQL($sSQL);
 
-                    foreach (chksql($oDB->getCol($sSQL)) as $iPlaceId) {
+                    foreach ($oDB->getCol($sSQL) as $iPlaceId) {
                         $aResults[$iPlaceId] = new Result($iPlaceId);
                     }
                 }

@@ -16,7 +16,8 @@ set_exception_handler_by_format($sOutputFormat);
 // Preferred language
 $aLangPrefOrder = $oParams->getPreferredLanguages();
 
-$oDB =& getDB();
+$oDB = new Nominatim\DB();
+$oDB->connect();
 
 $hLog = logStart($oDB, 'reverse', $_SERVER['QUERY_STRING'], $aLangPrefOrder);
 
@@ -66,6 +67,7 @@ if (isset($aPlace)) {
     $aPlace = array();
 }
 
+logEnd($oDB, $hLog, count($aPlace) ? 1 : 0);
 
 if (CONST_Debug) {
     var_dump($aPlace);
@@ -73,13 +75,16 @@ if (CONST_Debug) {
 }
 
 if ($sOutputFormat == 'html') {
-    $sDataDate = chksql($oDB->getOne("select TO_CHAR(lastimportdate,'YYYY/MM/DD HH24:MI')||' GMT' from import_status limit 1"));
+    $sDataDate = $oDB->getOne("select TO_CHAR(lastimportdate,'YYYY/MM/DD HH24:MI')||' GMT' from import_status limit 1");
     $sTileURL = CONST_Map_Tile_URL;
     $sTileAttribution = CONST_Map_Tile_Attribution;
 } elseif ($sOutputFormat == 'geocodejson') {
     $sQuery = $fLat.','.$fLon;
     if (isset($aPlace['place_id'])) {
-        $fDistance = chksql($oDB->getOne('SELECT ST_Distance(ST_SetSRID(ST_Point('.$fLon.','.$fLat.'),4326), centroid) FROM placex where place_id='.$aPlace['place_id']));
+        $fDistance = $oDB->getOne(
+            'SELECT ST_Distance(ST_SetSRID(ST_Point(:lon,:lat),4326), centroid) FROM placex where place_id = :placeid',
+            array(':lon' => $fLon, ':lat' => $fLat, ':placeid' => $aPlace['place_id'])
+        );
     }
 }
 
