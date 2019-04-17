@@ -58,7 +58,6 @@ class DB
                 $val = $this->connection->exec($sSQL);
             }
         } catch (\PDOException $e) {
-            $sErrMessage = $e->message();
             throw new \Nominatim\DatabaseError($sErrMessage, 500, null, $e, $sSQL);
         }
         return $val;
@@ -228,12 +227,6 @@ class DB
     public function getArraySQL($a)
     {
         return 'ARRAY['.join(',', $a).']';
-    }
-
-    public function getLastError()
-    {
-        // https://secure.php.net/manual/en/pdo.errorinfo.php
-        return $this->connection->errorInfo();
     }
 
     /**

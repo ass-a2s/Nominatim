@@ -36,8 +36,8 @@ class ReverseGeocode
                       13 => 18,
                       14 => 22, // Suburb
                       15 => 22,
-                      16 => 26, // Street, TODO: major street?
-                      17 => 26,
+                      16 => 26, // major street
+                      17 => 27, // minor street
                       18 => 30, // or >, Building
                       19 => 30, // or >, Building
                      );
@@ -246,12 +246,7 @@ class ReverseGeocode
             $sSQL .= ' placex';
             $sSQL .= '   WHERE ST_DWithin('.$sPointSQL.', geometry, '.$fSearchDiam.')';
             $sSQL .= '   AND';
-            // only streets
-            if ($iMaxRank == 26) {
-                $sSQL .= ' rank_address = 26';
-            } else {
-                $sSQL .= ' rank_address between 26 and '.$iMaxRank;
-            }
+            $sSQL .= ' rank_address between 26 and '.$iMaxRank;
             $sSQL .= ' and (name is not null or housenumber is not null';
             $sSQL .= ' or rank_address between 26 and 27)';
             $sSQL .= ' and (rank_address between 26 and 27';
@@ -304,7 +299,7 @@ class ReverseGeocode
                     // radius ?
                     $sSQL .= ' WHERE ST_DWithin('.$sPointSQL.', geometry, 0.001)';
                     $sSQL .= ' AND parent_place_id = '.$iPlaceID;
-                    $sSQL .= ' and rank_address != 28';
+                    $sSQL .= ' and rank_address > 28';
                     $sSQL .= ' and ST_GeometryType(geometry) != \'ST_LineString\'';
                     $sSQL .= ' and (name is not null or housenumber is not null)';
                     $sSQL .= ' and class not in (\'boundary\')';
